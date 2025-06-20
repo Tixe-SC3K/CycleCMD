@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CycleCMD Utility</title>
+  <style>
+    body { font-family: monospace; padding: 1em; background: #1e1e1e; color: #ccc; }
+    input, textarea, select { width: 100%; margin: 0.5em 0; background: #2a2a2a; color: #fff; border: 1px solid #444; padding: 4px; }
+    label { display: block; margin-top: 0.5em; }
+    button { padding: 0.5em 1em; font-weight: bold; background: #444; color: #fff; border: none; cursor: pointer; margin-right: 0.5em; }
+    pre { background: #111; padding: 1em; white-space: pre-wrap; border: 1px solid #333; }
+    h2, h3 { color: #fff; }
+    .error { color: #ff6666; font-weight: bold; margin-top: 1em; }
+  </style>
+</head>
+<body>
+  <h2>CycleCMD Utility</h2>
+  <h3>Make quick and simple command pallets for Source engine and GoldSRC games</h3>
+
+  <label>Modes (one per line, format: name | command):</label>
+  <textarea id="modes" rows="6" placeholder="toggle noclip | noclip"></textarea>
+
+  <label>Previous Key (e.g. j):</label>
+  <input id="prevKey" value="j">
+
+  <label>Action Key (e.g. k):</label>
+  <input id="actionKey" value="k">
+
+  <label>Next Key (e.g. l):</label>
+  <input id="nextKey" value="l">
+
+  <label>Prefix Text (e.g. MODE, CURRENT, TOOL):</label>
+  <input id="prefixText" value="MODE">
+
+  <label>Message Type:</label>
+  <select id="messageType">
+    <option value="say">say (chat)</option>
+    <option value="echo">echo (console)</option>
+  </select>
+
+  <button onclick="generateCFG()">Generate CFG</button>
+  <button onclick="downloadCFG()">Download CFG</button>
+
+  <div id="error" class="error"></div>
+
+  <h3>Generated CFG:</h3>
+  <pre id="output"></pre>
+
+  <script>
+    let currentCFG = '';
+
+    function generateCFG() {
+      const lines = document.getElementById('modes').value.trim().split('\n');
+      const prevKey = document.getElementById('prevKey').value.trim();
+      const actionKey = document.getElementById('actionKey').value.trim();
+      const nextKey = document.getElementById('nextKey').value.trim();
+      const messageType = document.getElementById('messageType').value;
+      const prefix = document.getElementById('prefixText').value.trim();
+
+      const errorDiv = document.getElementById('error');
+      const outputDiv = document.getElementById('output');
+      errorDiv.textContent = '';
+      outputDiv.textContent = '';
+
+      let aliases = [];
+      let modeAliases = [];
+      let modeNames = new Set();
+      let errors = [];
+
+      lines.forEach((line, i) => {
+        if (!line.includes('|')) {
+          errors.push(`Line ${i + 1} is missing a "|" separator.`);
+          return;
+        }
+
+        const [labelRaw, commandRaw] = line.split('|');
+        const label = labelRaw.trim();
+        const command = commandRaw.trim();
+
+        if (!label || !command) {
+          errors.push(`Line ${i + 1} has an empty name or command.`);
+          return;
+        }
+
+        const aliasName = 'custom_' + label.replace(/\s+/g, '_').toLowerCase();
+        if (modeNames.has(aliasName)) {
+          errors.push(`Duplicate mode name detected: "${label}"`);
+          return;
+        }
+
+        modeNames.add(aliasName);
+        aliases.push(`alias ${aliasName} "${command}"`);
+      });
+
+      if (errors.length > 0) {
+        errorDiv.textContent = errors.join('\n');
+        return;
+      }
+
+      lines.forEach((line, i) => {
+        const [labelRaw] = line.split('|');
+        const label = labelRaw.trim();
+        const aliasName = 'custom_' + label.replace(/\s+/g, '_').toLowerCase();
+
+        const modeIndex = i + 1;
+        const total = lines.length;
+        const nextMode = `mode_${(modeIndex % total) + 1}`;
+        const prevMode = `mode_${(modeIndex - 2 + total) % total + 1}`;
+        const messageCmd = `${messageType} ${prefix}: ${label}`;
+
+        modeAliases.push(`alias mode_${modeIndex} "${messageCmd}; bind ${actionKey} ${aliasName}; bind ${nextKey} ${nextMode}; bind ${prevKey} ${prevMode}"`);
+      });
+
+      const firstLabel = lines[0].split('|')[0].trim();
+      const firstAlias = 'custom_' + firstLabel.replace(/\s+/g, '_').toLowerCase();
+
+      const initialBinds = [
+        `// Start at mode 1`,
+        `bind ${actionKey} ${firstAlias}`,
+        `bind ${nextKey} mode_2`,
+        `bind ${prevKey} mode_${lines.length}`
+      ];
+
+      const output = [
+        '// === Generated via CycleCMD ver 1.7 ===',
+        '',
+        '// Command Aliases',
+        ...aliases,
+        '',
+        '// Mode Aliases',
+        ...modeAliases,
+        '',
+        ...initialBinds
+      ];
+
+      currentCFG = output.join('\n');
+      outputDiv.textContent = currentCFG;
+    }
+
+    function downloadCFG() {
+      if (!currentCFG) {
+        alert('Please generate the CFG first.');
+        return;
+      }
+
+      const blob = new Blob([currentCFG], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'quick_commands.cfg';
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+  </script>
+</body>
+</html>
